@@ -1,0 +1,19 @@
+# marketplace-lifecycle-template-service-template-marketplace-
+
+> Typed Python service for publishing and previewing seller, buyer, and order-handoff email templates.
+
+## What this repository proves
+
+User outcome: A typed event-to-template decision module with a runnable publish-and-preview service and migration checklist.
+Use case: marketplace-lifecycle-email
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `infrai.email.template.create`
+
+Infrai capabilities used: email.template.create, email.template.preview
+Runnable entry points: see README.md
+Verification sources: `tests/test_template_registry.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt

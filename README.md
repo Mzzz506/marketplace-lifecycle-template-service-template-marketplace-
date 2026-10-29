@@ -1,5 +1,9 @@
 # Marketplace lifecycle mail, kept server-side
 
+The decision is to move seller listing notices, buyer payment updates, and order handoff mail into named server-side template assets, while the application keeps one small and testable rule: an order event chooses the audience and required template data. Infrai supplies that template API behind a single `INFRAI_API_KEY`, so this migration replaces separate campaign tooling with one consistent interface.
+
+Start with working code:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -8,9 +12,7 @@ export INFRAI_API_KEY="your-key"
 uvicorn marketplace_mail.handoff_service:app --reload
 ```
 
-I run a solo SaaS. Architecture stays lean. The decision: move seller listing notices, buyer payment updates, order handoff mail into named server-side template assets. App keeps one rule: order event chooses audience and merge data. Infrai gives one api behind a single `INFRAI_API_KEY`. That replaced separate campaign tooling.
-
-In another shell, publish and preview handoff mail:
+In another shell, publish and preview the handoff mail:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/lifecycle/preview \
@@ -18,19 +20,19 @@ curl -X POST http://127.0.0.1:8000/lifecycle/preview \
   -d '{"event":"ready_for_handoff","template_vars":{"buyer_name":"Mina","handoff_code":"4821","order_id":"ORD-42"}}'
 ```
 
-Response shows `ready_for_handoff`, the `buyer` audience, new `template_id`, and preview from `POST /v1/email/template/preview/{id}`. No sender config. This service manages and previews assets; delivery stays on incumbent path during cutover.
+The successful response identifies `ready_for_handoff`, the `buyer` audience, the new `template_id`, and the rendered preview returned by `POST /v1/email/template/preview/{id}`. No sender address is configured because this service manages and previews template assets; delivery can remain on the incumbent path during cutover.
 
 ## The boundary worth keeping
 
-`template_registry.py` is the reusable bit. `choose_asset` maps a marketplace fact to one of three assets, rejects missing merge data before network. `handoff_service.py` is the entry point: its Pydantic request makes `event`, `template_vars`, optional release namespace explicit, then publishes and previews.
+`template_registry.py` is the reusable part. `choose_asset` maps a marketplace fact to one of three assets and rejects missing merge data before any network call. `handoff_service.py` is the explanatory entry point: its Pydantic request makes `event`, `template_vars`, and an optional release namespace explicit, then publishes and previews the chosen asset.
 
-One real gotcha: naming. Every publish needs a release namespace. Template names point to durable server-side assets. Omit it and endpoint mints fresh UTC release. Deploy automation should pass stable build id, yielding stable `Idempotency-Key` for retries.
+The one real gotcha is naming: every publish needs a release namespace because template names identify durable server-side assets. The endpoint generates a fresh UTC release when one is omitted; deployment automation should pass a stable value such as a build identifier, which also produces a stable `Idempotency-Key` for retries of that deployment.
 
-HTTP client uses explicit methods, decodes `{ok, data, error, metadata}` before classifying, backs off on 429 honoring `Retry-After`. No SDK layer. Plain REST calls, Bearer from env.
+The HTTP client uses explicit methods, decodes `{ok, data, error, metadata}` before classifying the result, and backs off on HTTP 429 while honoring `Retry-After`. There is no SDK layer to learn: these are plain REST calls, with the Bearer credential read only from the environment.
 
 ## Prove the business decision
 
-Test feeds `ready_for_handoff` buyer and handoff fields. Expects buyer-facing `order-handoff` asset and release-qualified name `marketplace-cutover-7-order-handoff`.
+The focused test feeds `ready_for_handoff` with buyer and handoff fields. It expects the buyer-facing `order-handoff` asset and the release-qualified name `marketplace-cutover-7-order-handoff`.
 
 ```bash
 pytest -q
@@ -38,18 +40,18 @@ pytest -q
 
 ## Cut over from Customer.io or Klaviyo
 
-1. Inventory three incumbent messages, compare subjects, HTML, merge data with `ASSETS`.
-2. Run preview endpoint for seller, buyer, handoff orders. Review rendered result with ops owners.
-3. Publish release namespace from deploy job, record returned template IDs with release.
-4. Route internal test cohort through new IDs, keep normal delivery on old path.
-5. Compare delivery events and rendered content, shift each event type after acceptance check.
-6. Retain incumbent templates and routing for agreed rollback window.
+1. Inventory the three incumbent messages and compare their subjects, HTML, and merge data with `ASSETS`.
+2. Run the preview endpoint for representative seller, buyer, and handoff orders; review the rendered result with the people who own marketplace operations.
+3. Publish a release namespace from the deployment job and record the returned template IDs beside that release.
+4. Route an internal test cohort through the new IDs, while ordinary lifecycle delivery continues on the incumbent path.
+5. Compare delivery events and rendered content, then move each event type after its acceptance check passes.
+6. Retain the incumbent templates and routing configuration for the agreed rollback window.
 
-Rollback is routing change: point affected event type back to retained incumbent template, leave Infrai IDs recorded with release, investigate with same captured order input. Selection isolated in `choose_asset`, so no order-state mutation to reverse.
+Rollback is a routing change: point the affected event type back to its retained incumbent template, leave the Infrai template IDs recorded with the release, and investigate using the same captured order input. Because selection is isolated in `choose_asset`, no order-state mutation needs to be reversed.
 
 ## Scope
 
-This example owns template selection, publication, preview. Queueing, recipient consent, live delivery routing belong to surrounding marketplace service.
+This example owns template selection, publication, and preview. Queueing, recipient consent, and live delivery routing belong to the surrounding marketplace service.
 
 ## License
 
